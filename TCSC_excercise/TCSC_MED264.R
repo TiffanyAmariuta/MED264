@@ -1,27 +1,26 @@
-traiti <- 76 #Breast cancer
-ciswindow <- 2e6
+traiti <- 76 #Breast cancer, index in the Sumstats2021_Update.txt.gz file 
+ciswindow <- 2e6 #how many nucleotides we consider for co-regulation between genes. 
 library(data.table) #install.packages("data.table")
-#library(Hmisc) #install.packages("Hmisc")
+#library(Hmisc) #install.packages("Hmisc") #for weighted variance function, but replaced by manual calculation
 
-traits <- fread("Sumstats2021_Update.txt.gz", header= T) #full list of traits
+traits <- fread("Sumstats2021_Update.txt.gz", header= T) #full list of traits with h2 and sample size values
 trait <- traits$Trait_Identifier[traiti] #match trait
 N <- traits$N[traiti] #get sample size for GWAS
 
 y <- fread("TissueGroups2.txt", header = T) #get tissue meta data
-groups <- unique(y$GTEx_sameN_lowN)
-tissues <- groups[-which(groups == "Remove")] #38
-small_tissues <- c(3,5,11,12,14,22,24,27:30,33:35,37:38) #add 1 to values 10 and above; update June 21st for artery aorta
-normal_tissues <- c(1:length(tissues))[-small_tissues]
-#small tissues are those with sample size < 320 and normal tissues have sample size = 320 
+groups <- unique(y$GTEx_sameN_lowN) #tissues for analysis
+tissues <- groups[-which(groups == "Remove")] #only keep tissues we want to analyze
+small_tissues <- c(3,5,11,12,14,22,24,27:30,33:35,37:38) #with sample size < 320
+normal_tissues <- c(1:length(tissues))[-small_tissues] #sample size = 320 
 
-get_cov_alpha1alpha1_multitissue <- function(alpha_z,CoRegMat,nGWAS,weights1,weights2,weights3){ #function to run TCSC regression
+get_cov_alpha1alpha1_multitissue <- function(alpha_z,CoRegMat,nGWAS,weights1,weights2,weights3){ #function to run TCSC regression, TWAS chi-sq ~ co-regulation scores * N/G
 y <- (alpha_z^2)/nGWAS #free intercept 
 w1 <- 1/weights1 #heteroscedasticity of twas chisq
 w2 <- 1/weights2 #co-regulation
 w3 <- 1/weights3 #tissue redundancy
-mod <- summary(glm(y ~ CoRegMat, weights = w1*w2*w3))
-cov_b1b1 <- coef(mod)[-1,1]  
-cov_b1b1 <- cov_b1b1[1:ncol(CoRegMat)]
+mod <- summary(glm(y ~ CoRegMat, weights = w1*w2*w3)) #multiple weights in weighted linear regression
+cov_b1b1 <- coef(mod)[-1,1]  #remove intercept, get betas for each tissue
+cov_b1b1 <- cov_b1b1[1:ncol(CoRegMat)] #only take value for each tissue
 return(cov_b1b1)
 }
 
@@ -40,7 +39,7 @@ z <- fread(paste0("Marginal_alphas_sumstats_1KG_v8_allEUR_blup/",trait,"/Margina
 ww <- which(transcript_key %in% keep) 
 transcript_key <- transcript_key[ww]  
 z <- z[ww] 
-m <- match(transcript_key,gtex$V7)
+m <- match(transcript_key,gtex$V7) #figure out if these genes are protein coding or not 
 genetype <- gtex$V8[m]
 ww <- which(genetype == "protein_coding") #only keep PC genes
 z <- z[ww] 
@@ -61,10 +60,10 @@ alpha_z <- c(alpha_z,z)
 #alpha_z <- c(alpha_z,z[which(genetype == "protein_coding")])
 }
 }
-alpha_z <- alpha_z[-remove_genes]
-alpha_z <- alpha_z[-remove_genes_from_smalltissues]
+alpha_z <- alpha_z[-remove_genes] #perform QC
+alpha_z <- alpha_z[-remove_genes_from_smalltissues] #perform QC
 if(length(w) > 0){alpha_z <- alpha_z[-w]}
-w <- which(alpha_z^2 > max(80,0.001*N) | is.na(alpha_z)) #trait specific qc, remove outliers
+w <- which(alpha_z^2 > max(80,0.001*N) | is.na(alpha_z)) #trait specific qc, remove outliers, if TWAS chi-sq is too high, we may not believe it. 
 if(length(w)>0){
 alpha_z <- alpha_z[-w]
 transcripts <- transcripts[-w]
@@ -73,23 +72,23 @@ chrs <- chrs[-w]
 tissueassign <- tissueassign[-w]
 X <- X[-w,]
 }
-N_tissuespecific <- as.numeric(table(tissueassign))
-a_transcripts <- table(transcripts)
+N_tissuespecific <- as.numeric(table(tissueassign)) #how many genes are modeled in each tissue, indexed by tissue 
+a_transcripts <- table(transcripts) #figure out how many times the same gene is modeled in different tissues 
 weights3 <- sapply(1:length(transcripts), function(x) as.numeric(a_transcripts)[match(transcripts[x], names(a_transcripts))])  #how many tissues express each gene
-tissueassign_tissues <- tissues[tissueassign]
+tissueassign_tissues <- tissues[tissueassign] #indexed by gene, what tissue does each gene belong to 
 y <- fread("TissueGroups2.txt", header = T)
 groups <- unique(y$GTEx_sameN)
 tissues <- groups[-which(groups == "Remove")] #23
 tissueassign <- match(tissueassign_tissues,tissues)
 weights2 <- sapply(1:nrow(X), function(x) sum(X[x,-tissueassign[x]])) + 1 #total co-regulation score weight
-expected_true_cish2_genes <- N_tissuespecific #how many gene models go into the TCSC model per tissue
+expected_true_cish2_genes <- N_tissuespecific #how many gene models go into the TCSC model per tissue, indexed by tissue 
 
 #### set up jackknife for estimating standard error #### 
 a <- cbind(1:length(starts),as.numeric(chrs),as.numeric(starts),unlist(sapply(1:length(N_tissuespecific), function(x) rep(x,N_tissuespecific[x]))))
 a <- a[order(a[,2],a[,3],decreasing = F),]
 chunks <- 200 #CHANGE THIS IF YOU LIKE
 #assigns each gene to a chunk, each chunk is adjacent and of the same size across the genome
-size_groups <- floor(length(starts)/chunks)
+size_groups <- floor(length(starts)/chunks) #figure out how many genes need to be in each chunk
 size_group5 <- length(starts) - (chunks-1)*size_groups
 group_assignment <- c()
 for (j in 1:chunks){
@@ -99,20 +98,20 @@ group_assignment <- c(group_assignment, rep(j,size_group5))
 group_assignment <- c(group_assignment, rep(j,size_groups))
 }
 }
-a <- cbind(a, group_assignment)
-a <- a[order(a[,1], decreasing = F),]
-a <- cbind(a,transcripts)
+a <- cbind(a, group_assignment) #add assignment for chunk
+a <- a[order(a[,1], decreasing = F),] #sort by chunk number 
+a <- cbind(a,transcripts) #add gene meta-data
 
 #calculate heteroscedasticity weight for regression
-mean_chisq <- mean(alpha_z^2, na.rm = T)
-totcoreg <- rowSums(X)
-crude_h2_est <- (mean_chisq - 1)/(N*mean(totcoreg)) #should this be average co-reg score or average sum across tissues co-reg score? 
-weights1 <- (1 + N*crude_h2_est*totcoreg)^2 #bias corrected but not scaled X 
+mean_chisq <- mean(alpha_z^2, na.rm = T) #mean chi-squared
+totcoreg <- rowSums(X) #co-regulation scores 
+crude_h2_est <- (mean_chisq - 1)/(N*mean(totcoreg)) #crude heritability estimate w/o regression. General tissue-wide signal
+weights1 <- (1 + N*crude_h2_est*totcoreg)^2 #heteroscedasticity - proportional to co-regulation. 
 
 variance_mat <- matrix(0,1+length(tissues),6) #estimate, jackknife SE, P
 variance_mat[,1] <- c(tissues,"AllTissues")
 variance_mat[1:length(tissues),2] <- get_cov_alpha1alpha1_multitissue(alpha_z,X,N,weights1,weights2,weights3) * expected_true_cish2_genes #run TCSC regression
-variance_mat[(length(tissues)+1),2] <- sum(as.numeric(variance_mat[1:length(tissues),2]))
+variance_mat[(length(tissues)+1),2] <- sum(as.numeric(variance_mat[1:length(tissues),2])) #add up h2 across tissues
 
 #estimate the SE for each tissue-specific h2 result
 jk <- matrix(0,nrow = chunks,ncol = length(tissues))
@@ -132,8 +131,8 @@ alpha_z_jk <- alpha_z[-remove_genes]
 mean_chisq <- mean(alpha_z_jk^2, na.rm = T)
 X_jk <- X[-remove_genes,]
 totcoreg <- rowSums(X_jk)
-crude_h2_est <- (mean_chisq - 1)/(N*mean(totcoreg))
-weights1_jk <- (1 + N*crude_h2_est*totcoreg)^2
+crude_h2_est <- (mean_chisq - 1)/(N*mean(totcoreg)) #need crude h2 estimate to compute weights again
+weights1_jk <- (1 + N*crude_h2_est*totcoreg)^2 #compute weights again 
 weights2_jk <- weights2[-remove_genes] 
 weights3_jk <- weights3[-remove_genes] #serves to upweight tissue-specific genes
 jk[chunk,] <- get_cov_alpha1alpha1_multitissue(alpha_z_jk,X_jk,N,weights1_jk,weights2_jk,weights3_jk)* N_tissuespecific_jk 
@@ -145,7 +144,7 @@ jk_weights[chunk,1] <- sum(1/(weights1_jk*weights2_jk*weights3_jk))
 write.table(jk, file = paste0("TCSC_",trait,"_jk.txt"), row.names = F, col.names = F, sep = "\t", quote = F)
 write.table(jk_weights, file = paste0("TCSC_",trait,"_jkweights.txt"), row.names = F, col.names = F, sep = "\t", quote = F)
 
-#calculate weighted variance 
+#calculate weighted variance which we need to interpret the jackknife results
 calc_weighted_var <- function(jk_colx){
 ws <- jk_weights[,1]
 wf <- rep(1,chunks)
