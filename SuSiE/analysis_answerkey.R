@@ -24,4 +24,5 @@ susie_plot(fitted_rss, y="PIP")
 summary(fitted_rss)$cs #there are 6 credible sets, each with one causal variant. 
                          
 #3. What are the genomic coordinates of causal SNPs? 
-
+pos <- snps$V4[match(sumstats$SNP[as.numeric(summary(fitted_rss)$cs$variable)], snps$V2)]
+#chr10: 21849769 21989245 21983960 21856475 21884471 22062729

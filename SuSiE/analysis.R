@@ -1,6 +1,8 @@
 library(data.table)
 library(susieR)
 
+#Use the SuSiE tutorial website as a reference: https://stephenslab.github.io/susieR/articles/finemapping_summary_statistics.html
+
 #Gene of interest: ENSG00000078403 Chromosome 10: 21,524,646-21,743,630 
 
 library(data.table)
