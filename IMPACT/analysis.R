@@ -18,6 +18,7 @@ files <- list.files(pattern = "IMPACT_")
 matrix_res <- matrix(0,length(positions), length(files))
 #iterate through files and positions to find the IMPACT score from file i for the SNP at position j
 
+#### WRITE CODE ####
 
 rownames(matrix_res) <- paste0("SNP:",positions)
 colnames(matrix_res) <- c("ESR1:BREAST", "HSF1:BREAST","HSF1:BREAST","HSF1:Adipocyte","PPARG:Adipocyte","SOX2:Lung","JUND:Lung")

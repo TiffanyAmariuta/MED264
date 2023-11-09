@@ -5,11 +5,13 @@ library(susieR)
 
 #Gene of interest: ENSG00000078403 Chromosome 10: 21,524,646-21,743,630 
 
-library(data.table)
 y <- fread("UKB_460K.cancer_BREAST.sumstats.gz", header = T)
 #get SNPs in the window corresponding to that gene of interest. 
 #Gene of interest: ENSG00000078403 Chromosome 10: 21,524,646-21,743,630 
 #1. Find the SNPs that are within 500kb +/- the gene body using the 1000G.EUR.10.bim file 
+
+#### WRITE CODE ####
+
 write.table(y, file = "BrCa_GWAS_ENSG00000078403_locus.txt", row.names = F, col.names = T, sep = "\t", quote = F)
 system("gzip -f BrCa_GWAS_ENSG00000078403_locus.txt")
 
@@ -21,6 +23,9 @@ fitted_rss = susie_rss(z = sumstats$Z, R = as.matrix(R), n = 459324, L = 10,
                         estimate_residual_variance = TRUE)
 #2. Plot the susie results and use the summary() function to understand the credible sets that were found 
 
+#### WRITE CODE ####
                         
 #3. What are the genomic coordinates of causal SNPs? 
+
+#### WRITE CODE ####
 
